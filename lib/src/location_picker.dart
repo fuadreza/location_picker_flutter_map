@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
@@ -11,6 +12,8 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart' as intl;
 import 'package:latlong2/latlong.dart';
 import 'package:location/location.dart';
+import 'package:vector_map_tiles/vector_map_tiles.dart' as vmp;
+import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
 import 'classes.dart';
 import 'widgets/copyright_osm_widget.dart';
@@ -249,6 +252,15 @@ class FlutterLocationPicker extends StatefulWidget {
   ///  example: [PolylineLayerWidget(polyline: Polyline(points: points, color: Colors.red))]
   final List<Widget> mapLayers;
 
+  /// alternates url template:
+  ///
+  /// Mapbox - mapbox://styles/mapbox/streets-v12?access_token={key}
+  ///
+  /// Maptiler - https://api.maptiler.com/maps/outdoor/style.json?key={key}
+  ///
+  /// Stadia Maps - https://tiles.stadiamaps.com/styles/outdoors.json?api_key={key}
+  final String? urlTemplateVector;
+
   const FlutterLocationPicker({
     super.key,
     required this.onPicked,
@@ -308,6 +320,7 @@ class FlutterLocationPicker extends StatefulWidget {
     this.mapLayers = const [],
     Widget? loadingWidget,
     this.selectLocationButtonLeadingIcon,
+    this.urlTemplateVector,
   }) : loadingWidget = loadingWidget ?? const CircularProgressIndicator();
 
   @override
@@ -328,7 +341,9 @@ class _FlutterLocationPickerState extends State<FlutterLocationPicker>
   LatLong initPosition = const LatLong(-6.1754024, 106.8271691649727);
   Timer? _debounce;
   bool isLoading = true;
+  bool isLoadingInitMap = true;
   late void Function(Exception e) onError;
+  vmp.Style? _style;
 
   /// It returns true if the text is RTL, false if it's LTR
   ///
@@ -486,19 +501,31 @@ class _FlutterLocationPickerState extends State<FlutterLocationPicker>
     }
   }
 
-  @override
-  void setState(fn) {
-    if (mounted) {
-      super.setState(fn);
+  Future<void> initialStyle() async {
+    try {
+      if (widget.urlTemplateVector != null) {
+        _style = await readStyle();
+      }
+    } on Exception catch (e) {
+      onError(e);
+    } catch (e) {
+      if (kDebugMode) {
+        print('$e');
+      }
     }
+
+    setState(() {
+      isLoadingInitMap = false;
+    });
   }
 
-  @override
-  void initState() {
-    _mapController = MapController();
-    _animationController =
-        AnimationController(duration: widget.mapAnimationDuration, vsync: this);
-    onError = widget.onError ?? (e) => debugPrint(e.toString());
+  Future<vmp.Style> readStyle() => vmp.StyleReader(
+        uri: widget.urlTemplateVector ?? '',
+        logger: const vtr.Logger.console(),
+      ).read();
+
+  Future<void> initialPosition() async {
+    await initialStyle();
 
     /// Checking if the trackMyPosition is true or false. If it is true, it will get the current
     /// position of the user and set the initLate and initLong to the current position. If it is false,
@@ -550,6 +577,23 @@ class _FlutterLocationPickerState extends State<FlutterLocationPicker>
         onLocationChanged(latLng: center);
       }
     });
+  }
+
+  @override
+  void setState(fn) {
+    if (mounted) {
+      super.setState(fn);
+    }
+  }
+
+  @override
+  void initState() {
+    _mapController = MapController();
+    _animationController =
+        AnimationController(duration: widget.mapAnimationDuration, vsync: this);
+    onError = widget.onError ?? (e) => debugPrint(e.toString());
+
+    initialPosition();
 
     super.initState();
   }
@@ -771,11 +815,21 @@ class _FlutterLocationPickerState extends State<FlutterLocationPicker>
         ),
         mapController: _mapController,
         children: [
-          TileLayer(
-            urlTemplate: widget.urlTemplate,
-            subdomains: const ['a', 'b', 'c'],
-            tileProvider: CancellableNetworkTileProvider(),
-          ),
+          if (isLoadingInitMap == false)
+            if (_style != null)
+              vmp.VectorTileLayer(
+                tileProviders: _style!.providers,
+                theme: _style!.theme,
+                sprites: _style!.sprites,
+                tileOffset: vmp.TileOffset.mapbox,
+                layerMode: vmp.VectorTileLayerMode.vector,
+              )
+            else
+              TileLayer(
+                urlTemplate: widget.urlTemplate,
+                subdomains: const ['a', 'b', 'c'],
+                tileProvider: CancellableNetworkTileProvider(),
+              ),
           if (widget.showCurrentLocationPointer) _buildCurrentLocation(),
           ...widget.mapLayers,
         ],
