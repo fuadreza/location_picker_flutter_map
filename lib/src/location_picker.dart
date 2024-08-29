@@ -12,7 +12,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart' as intl;
 import 'package:latlong2/latlong.dart';
 import 'package:location/location.dart';
-import 'package:vector_map_tiles/vector_map_tiles.dart' as vmp;
+import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
 import 'classes.dart';
@@ -261,6 +261,10 @@ class FlutterLocationPicker extends StatefulWidget {
   /// Stadia Maps - https://tiles.stadiamaps.com/styles/outdoors.json?api_key={key}
   final String? urlTemplateVector;
 
+  final Map<String, String>? httpHeaders;
+
+  final Style? style;
+
   const FlutterLocationPicker({
     super.key,
     required this.onPicked,
@@ -321,6 +325,8 @@ class FlutterLocationPicker extends StatefulWidget {
     Widget? loadingWidget,
     this.selectLocationButtonLeadingIcon,
     this.urlTemplateVector,
+    this.style,
+    this.httpHeaders,
   }) : loadingWidget = loadingWidget ?? const CircularProgressIndicator();
 
   @override
@@ -343,7 +349,7 @@ class _FlutterLocationPickerState extends State<FlutterLocationPicker>
   bool isLoading = true;
   bool isLoadingInitMap = true;
   late void Function(Exception e) onError;
-  vmp.Style? _style;
+  Style? _style;
 
   /// It returns true if the text is RTL, false if it's LTR
   ///
@@ -519,13 +525,21 @@ class _FlutterLocationPickerState extends State<FlutterLocationPicker>
     });
   }
 
-  Future<vmp.Style> readStyle() => vmp.StyleReader(
+  Future<Style> readStyle() => StyleReader(
         uri: widget.urlTemplateVector ?? '',
+        httpHeaders: widget.httpHeaders,
         logger: const vtr.Logger.console(),
       ).read();
 
   Future<void> initialPosition() async {
-    await initialStyle();
+    if (widget.style != null) {
+      _style = widget.style;
+      setState(() {
+        isLoadingInitMap = false;
+      });
+    } else {
+      await initialStyle();
+    }
 
     /// Checking if the trackMyPosition is true or false. If it is true, it will get the current
     /// position of the user and set the initLate and initLong to the current position. If it is false,
@@ -604,6 +618,7 @@ class _FlutterLocationPickerState extends State<FlutterLocationPicker>
   void dispose() {
     _mapController.dispose();
     _animationController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -817,12 +832,14 @@ class _FlutterLocationPickerState extends State<FlutterLocationPicker>
         children: [
           if (isLoadingInitMap == false)
             if (_style != null)
-              vmp.VectorTileLayer(
+              VectorTileLayer(
                 tileProviders: _style!.providers,
                 theme: _style!.theme,
                 sprites: _style!.sprites,
-                tileOffset: vmp.TileOffset.mapbox,
-                layerMode: vmp.VectorTileLayerMode.vector,
+                tileOffset: TileOffset.mapbox,
+                layerMode: VectorTileLayerMode.vector,
+                maximumZoom: widget.maxZoomLevel,
+                memoryTileDataCacheMaxSize: 70,
               )
             else
               TileLayer(
