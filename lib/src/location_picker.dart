@@ -60,6 +60,14 @@ class FlutterLocationPicker extends StatefulWidget {
   ///
   final int? nominatimZoomLevel;
 
+  /// [nominatimUserAgent] : (String) value of the `User-Agent` header sent with
+  /// every nominatim request. The public OpenStreetMap nominatim instance
+  /// rejects requests made with a generic user agent, so this should identify
+  /// your application and provide a way to contact you
+  /// (example: 'MyApp/1.0.0 (support@myapp.com)') (default = 'location_picker_flutter_map')
+  ///
+  final String nominatimUserAgent;
+
   /// [countryFilter] : (String) set the list of country codes to filter search results to them (example: 'eg,us') (default = null)
   ///
   final String? countryFilter;
@@ -281,6 +289,7 @@ class FlutterLocationPicker extends StatefulWidget {
     this.mapLanguage = 'en',
     this.nominatimHost = 'nominatim.openstreetmap.org',
     this.nominatimZoomLevel,
+    this.nominatimUserAgent = 'location_picker_flutter_map',
     this.nominatimAdditionalQueryParameters,
     this.countryFilter,
     this.selectLocationButtonText = 'Set Current Location',
@@ -463,6 +472,29 @@ class _FlutterLocationPickerState extends State<FlutterLocationPicker>
     });
   }
 
+  /// The headers sent with every nominatim request.
+  ///
+  /// Nominatim requires a descriptive `User-Agent`, otherwise the request is
+  /// answered with a plain text `Access denied` body instead of json. Any
+  /// header given through [FlutterLocationPicker.httpHeaders] is kept and can
+  /// override the default user agent.
+  Map<String, String> get _nominatimHeaders => {
+        'User-Agent': widget.nominatimUserAgent,
+        ...?widget.httpHeaders,
+      };
+
+  /// Throws a [http.ClientException] when nominatim did not answer with a
+  /// success status, so the caller reports the real reason instead of a
+  /// `FormatException` coming from decoding a non json body.
+  void _checkNominatimResponse(http.Response response) {
+    if (response.statusCode != 200) {
+      throw http.ClientException(
+        'Nominatim request failed (${response.statusCode}): ${response.body}',
+        response.request?.url,
+      );
+    }
+  }
+
   /// It takes the pointer of the map and sends a request to the OpenStreetMap API to get the address of
   /// the pointer
   ///
@@ -488,7 +520,8 @@ class _FlutterLocationPickerState extends State<FlutterLocationPicker>
     };
     queryParameters.addAll(widget.nominatimAdditionalQueryParameters ?? {});
     var uri = Uri.https(widget.nominatimHost, '/reverse', queryParameters);
-    var response = await client.get(uri);
+    var response = await client.get(uri, headers: _nominatimHeaders);
+    _checkNominatimResponse(response);
     var decodedResponse = jsonDecode(utf8.decode(response.bodyBytes));
     String displayName = "This Location is not accessible";
     Map<String, dynamic> address;
@@ -712,9 +745,22 @@ class _FlutterLocationPickerState extends State<FlutterLocationPicker>
                   () async {
                     var client = http.Client();
                     try {
-                      String url =
-                          'https://${widget.nominatimHost}/search?q=$value&format=json&polygon_geojson=1&addressdetails=1&accept-language=${widget.mapLanguage}${widget.countryFilter != null ? '&countrycodes=${widget.countryFilter}' : ''}';
-                      var response = await client.get(Uri.parse(url));
+                      Map<String, dynamic> queryParameters = {
+                        'q': value,
+                        'format': 'json',
+                        'polygon_geojson': '1',
+                        'addressdetails': '1',
+                        'accept-language': widget.mapLanguage,
+                        if (widget.countryFilter != null)
+                          'countrycodes': widget.countryFilter!,
+                      };
+                      queryParameters.addAll(
+                          widget.nominatimAdditionalQueryParameters ?? {});
+                      var uri = Uri.https(
+                          widget.nominatimHost, '/search', queryParameters);
+                      var response =
+                          await client.get(uri, headers: _nominatimHeaders);
+                      _checkNominatimResponse(response);
                       var decodedResponse =
                           jsonDecode(utf8.decode(response.bodyBytes))
                               as List<dynamic>;

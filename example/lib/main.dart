@@ -25,6 +25,9 @@ class MyApp extends StatelessWidget {
           searchBarBackgroundColor: Colors.white,
           selectedLocationButtonTextStyle: const TextStyle(fontSize: 18),
           mapLanguage: 'en',
+          // Nominatim rejects requests without a descriptive user agent, so
+          // identify your app and give a way to contact you.
+          nominatimUserAgent: 'LocationPickerExample/1.0 (example@example.com)',
           onError: (e) => print(e),
           selectLocationButtonLeadingIcon: const Icon(Icons.check),
           onPicked: (pickedData) {

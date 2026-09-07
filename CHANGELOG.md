@@ -1,3 +1,17 @@
+## Unreleased
+
+* Send a `User-Agent` header (`nominatimUserAgent` property) on the Nominatim
+  search and reverse geocode requests. Without it the public OpenStreetMap
+  instance answers `Access denied`, which surfaced as
+  `FormatException: Unexpected character` while decoding the body.
+* Forward `httpHeaders` to the Nominatim requests as well, not only to the
+  vector tile layer.
+* URL encode the search query, so terms containing spaces, `&` or `#` no longer
+  break the request.
+* Apply `nominatimAdditionalQueryParameters` to the search request too.
+* Throw a `ClientException` with the status code and body when Nominatim answers
+  with an error, instead of failing while decoding the response.
+
 ## 3.1.0
 
 * Migrate from `Geolocator` to `Location` package.
